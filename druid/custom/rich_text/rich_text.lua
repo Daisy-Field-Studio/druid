@@ -200,6 +200,7 @@ end
 function RichText.set_text(self, text)
 	self:clear()
 	self._last_value = text
+	self._settings.adjust_scale = 1
 
 	local words, settings, line_metrics = rich_text.create(text, self._settings, self.style)
 	line_metrics = rich_text.adjust_to_area(words, settings, line_metrics, self.style)
