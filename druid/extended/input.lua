@@ -94,6 +94,7 @@ end
 -- @tfield function on_select (self, button_node) Callback on input field selecting
 -- @tfield function on_unselect (self, button_node) Callback on input field unselecting
 -- @tfield function on_input_wrong (self, button_node) Callback on wrong user input
+-- @tfield function on_input_text (self, button_node) Callback on text user input
 -- @tfield table button_style Custom button style for input node
 function Input.on_style_change(self, style)
 	self.style = {}
@@ -106,6 +107,7 @@ function Input.on_style_change(self, style)
 	self.style.on_select = style.on_select or function(_, button_node) end
 	self.style.on_unselect = style.on_unselect or function(_, button_node) end
 	self.style.on_input_wrong = style.on_input_wrong or function(_, button_node) end
+	self.style.on_input_text = style.on_input_text or function(_, button_node) end
 
 	self.style.button_style = style.button_style or {
 		LONGTAP_TIME = 0.4,
@@ -276,6 +278,7 @@ function Input.set_text(self, input_text)
 		self.total_width = self.text_width + self.marked_text_width
 
 		self.on_input_text:trigger(self:get_context(), real_text)
+		self.style.on_input_text(self, self.button.node)
 		if #final_text == 0 then
 			self.on_input_empty:trigger(self:get_context(), real_text)
 		end
