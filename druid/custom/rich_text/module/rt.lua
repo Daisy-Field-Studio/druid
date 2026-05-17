@@ -13,9 +13,39 @@ local utf8 = utf8 or utf8_lua
 
 local M = {}
 
--- Trim spaces on string start
-local function ltrim(text)
-	return text:match('^%s*(.*)')
+local function trim(text)
+	return text:match("^%s*(.-)%s*$")
+end
+
+
+local function count_leading_spaces(text)
+	local spaces = text:match("^%s*")
+	return spaces and #spaces or 0
+end
+
+
+local function count_trailing_spaces(text)
+	local spaces = text:match("%s*$")
+	return spaces and #spaces or 0
+end
+
+
+local function get_space_width(font_resource)
+	local with_space = resource.get_text_metrics(font_resource, "| |").width
+	local without_space = resource.get_text_metrics(font_resource, "||").width
+	local width = with_space - without_space
+
+	if width <= 0 then
+		width = resource.get_text_metrics(font_resource, ".").width
+	end
+
+	return width
+end
+
+
+local function get_line_spacing(previous_line_metrics, line_metrics, settings)
+	local leading = settings.text_leading or 1
+	return math.max(previous_line_metrics.height, line_metrics.height) * leading
 end
 
 
@@ -76,13 +106,21 @@ end
 ---@param settings rich_text.settings
 ---@return rich_text.metrics
 local function get_text_metrics(word, previous_word, settings)
-	local text = word.text
+	local source_text = word.text
+	local text = trim(source_text)
 	local font_resource = gui.get_font_resource(word.font)
+	local leading_space_count = count_leading_spaces(source_text)
+	local trailing_space_count = text == "" and 0 or count_trailing_spaces(source_text)
 
 	---@type druid.rich_text.metrics
 	local metrics
 	local word_scale_x = word.relative_scale * settings.text_scale.x * settings.adjust_scale
 	local word_scale_y = word.relative_scale * settings.text_scale.y * settings.adjust_scale
+	local space_width = get_space_width(font_resource) * word_scale_x
+	local leading_space_width = space_width * leading_space_count
+	local trailing_space_width = space_width * trailing_space_count
+	local node_width = 0
+	local advance_width = 0
 
 	if utf8.len(text) == 0 then
 		metrics = resource.get_text_metrics(font_resource, "|")
@@ -92,20 +130,26 @@ local function get_text_metrics(word, previous_word, settings)
 		metrics = resource.get_text_metrics(font_resource, text)
 		metrics.width = metrics.width * word_scale_x
 		metrics.height = metrics.height * word_scale_y
+		node_width = metrics.width
+		advance_width = node_width
 
-		if previous_word and not previous_word.image then
-			local previous_word_metrics = resource.get_text_metrics(font_resource, previous_word.text)
-			local union_metrics = resource.get_text_metrics(font_resource, previous_word.text .. text)
+		local previous_text = previous_word and not previous_word.image and trim(previous_word.source_text or previous_word.text) or ""
+		local previous_has_trailing_spaces = previous_word and not previous_word.image and count_trailing_spaces(previous_word.source_text or previous_word.text) > 0
+		if previous_text ~= "" and not previous_has_trailing_spaces and leading_space_count == 0 and previous_word.font == word.font and previous_word.relative_scale == word.relative_scale then
+			local previous_word_metrics = resource.get_text_metrics(font_resource, previous_text)
+			local union_metrics = resource.get_text_metrics(font_resource, previous_text .. text)
 
-			local without_previous_width = metrics.width
-			metrics.width = (union_metrics.width - previous_word_metrics.width) * word_scale_x
+			advance_width = (union_metrics.width - previous_word_metrics.width) * word_scale_x
 			-- Since the several characters can be ajusted to fit the space between the previous word and this word
 			-- For example: chars: [.,?!]
-			metrics.offset_x = metrics.width - without_previous_width
+			metrics.offset_x = advance_width - node_width
 		end
 	end
 
-	metrics.offset_x = metrics.offset_x or 0
+	metrics.text = text
+	metrics.node_width = math.max(node_width, 0)
+	metrics.width = leading_space_width + advance_width + trailing_space_width
+	metrics.offset_x = (metrics.offset_x or 0) + leading_space_width
 	metrics.offset_y = metrics.offset_y or 0
 
 	return metrics
@@ -215,7 +259,8 @@ function M._fill_properties(word, metrics, settings)
 		-- Text properties
 		word.scale = gui.get_scale(settings.text_prefab) * word.relative_scale * settings.adjust_scale
 		word.pivot = gui.get_pivot(settings.text_prefab)
-		word.size = vmath.vector3(metrics.width, metrics.height, 0)
+		word.text = metrics.text or word.text
+		word.size = vmath.vector3(metrics.node_width or metrics.width, metrics.height, 0)
 		word.offset = vmath.vector3(metrics.offset_x, metrics.offset_y, 0)
 	end
 end
@@ -249,7 +294,7 @@ function M._split_on_lines(words, settings)
 			end
 		end
 
-		local word_metrics = measure_node(word, settings)
+		local word_metrics = measure_node(word, settings, previous_word)
 
 		local next_words_width = word_metrics.width
 		-- Collect width of nobr words from current to next words with nobr
@@ -266,14 +311,9 @@ function M._split_on_lines(words, settings)
 		local overflow = (current_line_width + next_words_width) > settings.width
 		local is_new_line = (overflow or word.br) and settings.is_multiline and not word.nobr
 
-		-- We recalculate metrics with previous_word if it follow for word on current line
-		if not is_new_line and previous_word then
-			word_metrics = measure_node(word, settings, previous_word)
-		end
-
 		-- Trim first word of the line
-		if is_new_line or not previous_word then
-			word.text = ltrim(word.text)
+		if is_new_line then
+			word.text = word.source_text
 			word_metrics = measure_node(word, settings, nil)
 		end
 		M._fill_properties(word, word_metrics, settings)
@@ -288,7 +328,6 @@ function M._split_on_lines(words, settings)
 			-- overflow, position the words that fit on the line
 			lines[#lines + 1] = current_line
 
-			word.text = ltrim(word.text)
 			current_line = { word }
 			current_line_height = word.metrics.height
 			current_line_width = word.metrics.width
@@ -326,7 +365,8 @@ function M._position_lines(lines, settings)
 			local word = line[word_index]
 			local pivot_offset = helper.get_pivot_offset(word.pivot)
 			local word_width = word.metrics.width
-			word.position.x = current_x + word_width * (pivot_offset.x + 0.5) + word.offset.x
+			local node_width = word.metrics.node_width or word_width
+			word.position.x = current_x + node_width * (pivot_offset.x + 0.5) + word.offset.x
 			word.position.y = current_y + word.metrics.height * (pivot_offset.y - 0.5) + word.offset.y
 
 			-- Align item on text line depends on anchor
@@ -345,7 +385,10 @@ function M._position_lines(lines, settings)
 			end
 		end
 
-		current_y = current_y - line_metrics.height
+		local next_line_metrics = lines_metrics.lines[line_index + 1]
+		if next_line_metrics then
+			current_y = current_y - get_line_spacing(line_metrics, next_line_metrics, settings)
+		end
 	end
 
 	return lines_metrics
@@ -358,7 +401,6 @@ end
 function M._get_lines_metrics(lines, settings)
 	local metrics = {}
 	local text_width = 0
-	local text_height = 0
 	for line_index = 1, #lines do
 		local line = lines[line_index]
 		local width = 0
@@ -373,17 +415,20 @@ function M._get_lines_metrics(lines, settings)
 			end
 		end
 
-		if line_index > 1 then
-			height = height * settings.text_leading
-		end
-
 		text_width = math.max(text_width, width)
-		text_height = text_height + height
 
 		metrics[#metrics + 1] = {
 			width = width,
 			height = height,
 		}
+	end
+
+	local text_height = 0
+	if #metrics > 0 then
+		text_height = metrics[#metrics].height
+		for index = 2, #metrics do
+			text_height = text_height + get_line_spacing(metrics[index - 1], metrics[index], settings)
+		end
 	end
 
 	---@type rich_text.lines_metrics

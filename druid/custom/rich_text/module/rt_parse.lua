@@ -18,10 +18,32 @@ local function parse_tag(tag, params, style)
 end
 
 
+local function is_space_only(text)
+	return text ~= "" and text:match("^%s+$") ~= nil
+end
+
+
+local function append_text(word, text)
+	word.text = word.text .. text
+	word.source_text = word.text
+end
+
+
 -- add a single word to the list of words
 local function add_word(text, settings, words)
 	-- handle HTML entities
 	text = text:gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&nbsp;", " ")
+
+	local last = words[#words]
+	if is_space_only(text) and last and not last.image and not last.br then
+		append_text(last, text)
+		return
+	end
+
+	if not is_space_only(text) and last and not last.image and not last.br and is_space_only(last.text) then
+		text = last.text .. text
+		words[#words] = nil
+	end
 
 	local data = { text = text, source_text = text }
 	for k,v in pairs(settings) do
@@ -43,14 +65,15 @@ local function split_line(line, settings, words)
 		add_word(ws_start .. ws_end, settings, words)
 	else
 		local wi = #words
-		for word in trimmed_text:gmatch("%S+") do
-			add_word(word .. " ", settings, words)
+		local first = nil
+		for word, spaces in trimmed_text:gmatch("(%S+)(%s*)") do
+			add_word(word .. spaces, settings, words)
+			first = first or words[wi + 1] or words[wi]
 		end
-		local first = words[wi + 1]
 		first.text = ws_start .. first.text
 		first.source_text = first.text
 		local last = words[#words]
-		last.text = utf8.sub(last.text, 1, utf8.len(last.text) - 1) .. ws_end
+		last.text = last.text .. ws_end
 		last.source_text = last.text
 	end
 end
