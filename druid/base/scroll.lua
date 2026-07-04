@@ -577,7 +577,7 @@ function Scroll._cancel_animate(self)
 		self.target_position = gui.get_position(self.content_node)
 		self.position.x = self.target_position.x
 		self.position.y = self.target_position.y
-		gui.cancel_animation(self.content_node, gui.PROP_POSITION)
+		gui.cancel_animations(self.content_node, gui.PROP_POSITION)
 		self.is_animate = false
 	end
 end

@@ -300,7 +300,7 @@ gui.SIZE_MODE_MANUAL = nil
 ---This starts an animation of a node property according to the specified parameters.
 ---If the node property is already being animated, that animation will be canceled and
 ---replaced by the new one. Note however that several different node properties
----can be animated simultaneously. Use gui.cancel_animation to stop the animation
+---can be animated simultaneously. Use gui.cancel_animations to stop the animation
 ---before it has completed.
 ---Composite properties of type vector3, vector4 or quaternion
 ---also expose their sub-components (x, y, z and w).
@@ -376,7 +376,7 @@ function gui.animate(node, property, to, easing, duration, delay, complete_funct
 ---"inner_radius" (pie)
 ---"slice9" (slice9)
 ---
-function gui.cancel_animation(node, property) end
+function gui.cancel_animations(node, property) end
 
 ---Cancels any running flipbook animation on the specified node.
 ---@param node node node cancel flipbook animation for

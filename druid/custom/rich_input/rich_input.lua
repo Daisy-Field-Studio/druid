@@ -37,7 +37,7 @@ local SCHEME = {
 
 
 local function animate_cursor(self)
-	gui.cancel_animation(self.cursor, gui.PROP_COLOR)
+	gui.cancel_animations(self.cursor, gui.PROP_COLOR)
 	gui.set_color(self.cursor, vmath.vector4(1))
 	gui.animate(self.cursor, gui.PROP_COLOR, vmath.vector4(1,1,1,0), gui.EASING_INSINE, 0.8, 0, nil, gui.PLAYBACK_LOOP_PINGPONG)
 end
